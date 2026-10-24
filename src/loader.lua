@@ -9,7 +9,7 @@
     Change REPO to point at your fork.
 --]]
 
-local REPO  = "https://raw.githubusercontent.com/YOUR_USER/lua-vm-interceptor/main"
+local REPO  = "https://raw.githubusercontent.com/freewifiman66-blip/llol/master"
 
 -- 1. Load and install hooks
 local hookSrc = game:HttpGet(REPO .. "/src/interceptor.lua")

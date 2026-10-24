@@ -268,7 +268,7 @@ print("[interceptor v2] Output: decoded_stream.bin / decoded_env.txt / decoded_c
 
 -- ── Optional one-shot loader (edit SCRIPT_URL then uncomment) ────────────────
 --[[
-local SCRIPT_URL = "https://raw.githubusercontent.com/YOUR_USER/lua-vm-interceptor/main/script.lua"
+local SCRIPT_URL = "https://raw.githubusercontent.com/freewifiman66-blip/llol/master/script.lua"
 local ok, src = pcall(function() return game:HttpGet(SCRIPT_URL) end)
 if ok and src then
     local fn, err = loadstring(src)
