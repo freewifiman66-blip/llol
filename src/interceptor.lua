@@ -104,11 +104,14 @@ if buffer then
         return v
     end)
 
+    local band  = bit32.band
+    local rshift = bit32.rshift
+
     -- u16 reads: capture both constituent bytes
     buffer.readu16 = _newcc(function(b, off)
         local v = _buf_readu16(b, off)
-        captureStreamByte(v & 0xFF)
-        captureStreamByte((v >> 8) & 0xFF)
+        captureStreamByte(band(v, 0xFF))
+        captureStreamByte(band(rshift(v, 8), 0xFF))
         return v
     end)
 
@@ -116,18 +119,18 @@ if buffer then
     buffer.readi16 = _newcc(function(b, off)
         local v = _buf_readi16(b, off)
         local u = v < 0 and v + 65536 or v
-        captureStreamByte(u & 0xFF)
-        captureStreamByte((u >> 8) & 0xFF)
+        captureStreamByte(band(u, 0xFF))
+        captureStreamByte(band(rshift(u, 8), 0xFF))
         return v
     end)
 
     -- u32 reads
     buffer.readu32 = _newcc(function(b, off)
         local v = _buf_readu32(b, off)
-        captureStreamByte(v & 0xFF)
-        captureStreamByte((v >> 8) & 0xFF)
-        captureStreamByte((v >> 16) & 0xFF)
-        captureStreamByte((v >> 24) & 0xFF)
+        captureStreamByte(band(v, 0xFF))
+        captureStreamByte(band(rshift(v, 8), 0xFF))
+        captureStreamByte(band(rshift(v, 16), 0xFF))
+        captureStreamByte(band(rshift(v, 24), 0xFF))
         return v
     end)
 
@@ -135,22 +138,21 @@ if buffer then
     buffer.readi32 = _newcc(function(b, off)
         local v = _buf_readi32(b, off)
         local u = v < 0 and v + 4294967296 or v
-        captureStreamByte(u & 0xFF)
-        captureStreamByte((u >> 8) & 0xFF)
-        captureStreamByte((u >> 16) & 0xFF)
-        captureStreamByte((u >> 24) & 0xFF)
+        captureStreamByte(band(u, 0xFF))
+        captureStreamByte(band(rshift(u, 8), 0xFF))
+        captureStreamByte(band(rshift(u, 16), 0xFF))
+        captureStreamByte(band(rshift(u, 24), 0xFF))
         return v
     end)
 
     -- f32 reads
     buffer.readf32 = _newcc(function(b, off)
         local v = _buf_readf32(b, off)
-        -- log as raw u32 bits
         local u = _buf_readu32(b, off)
-        captureStreamByte(u & 0xFF)
-        captureStreamByte((u >> 8) & 0xFF)
-        captureStreamByte((u >> 16) & 0xFF)
-        captureStreamByte((u >> 24) & 0xFF)
+        captureStreamByte(band(u, 0xFF))
+        captureStreamByte(band(rshift(u, 8), 0xFF))
+        captureStreamByte(band(rshift(u, 16), 0xFF))
+        captureStreamByte(band(rshift(u, 24), 0xFF))
         return v
     end)
 
@@ -172,7 +174,7 @@ if buffer then
     local preCount  = 0
     buffer.writeu32 = _newcc(function(b, off, v)
         _buf_writeu32(b, off, v)
-        preBuffer[off // 4 + 1] = v
+        preBuffer[math.floor(off / 4) + 1] = v
         preCount = preCount + 1
     end)
 end
