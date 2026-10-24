@@ -46,9 +46,6 @@
 -- ── Compat ───────────────────────────────────────────────────────────────────
 local _writefile  = writefile  or function() end
 local _appendfile = appendfile or _writefile
-local _hookfn     = hookfunction or function(_, r) return r end
-local _newcc      = newcclosure  or function(f) return f end
-
 local function wlog(file, line)
     pcall(_appendfile, file, line .. "\n")
 end
@@ -86,104 +83,80 @@ end
 
 -- ── Hook buffer API ──────────────────────────────────────────────────────────
 -- The inner Luraph VM reads its decrypted bytecode via buffer.readu8 etc.
--- Every byte it reads goes through buffer.readu8 — we capture them all.
-if buffer then
-    local _buf_readu8     = buffer.readu8
-    local _buf_readu16    = buffer.readu16
-    local _buf_readu32    = buffer.readu32
-    local _buf_readi16    = buffer.readi16
-    local _buf_readi32    = buffer.readi32
-    local _buf_readf32    = buffer.readf32
-    local _buf_readstring = buffer.readstring
-    local _buf_writeu32   = buffer.writeu32
-
-    -- Capture every u8 read (most granular — the LCG output is applied per-byte here)
-    buffer.readu8 = _newcc(function(b, off)
-        local v = _buf_readu8(b, off)
-        captureStreamByte(v)
-        return v
-    end)
-
-    local band  = bit32.band
+-- buffer is read-only in Roblox, so we use hookfunction instead of assignment.
+if buffer and hookfunction then
+    local band   = bit32.band
     local rshift = bit32.rshift
 
-    -- u16 reads: capture both constituent bytes
-    buffer.readu16 = _newcc(function(b, off)
-        local v = _buf_readu16(b, off)
+    hookfunction(buffer.readu8, newcclosure(function(b, off)
+        local v = buffer.readu8(b, off)
+        captureStreamByte(v)
+        return v
+    end))
+
+    hookfunction(buffer.readu16, newcclosure(function(b, off)
+        local v = buffer.readu16(b, off)
         captureStreamByte(band(v, 0xFF))
         captureStreamByte(band(rshift(v, 8), 0xFF))
         return v
-    end)
+    end))
 
-    -- i16 reads
-    buffer.readi16 = _newcc(function(b, off)
-        local v = _buf_readi16(b, off)
+    hookfunction(buffer.readi16, newcclosure(function(b, off)
+        local v = buffer.readi16(b, off)
         local u = v < 0 and v + 65536 or v
         captureStreamByte(band(u, 0xFF))
         captureStreamByte(band(rshift(u, 8), 0xFF))
         return v
-    end)
+    end))
 
-    -- u32 reads
-    buffer.readu32 = _newcc(function(b, off)
-        local v = _buf_readu32(b, off)
+    hookfunction(buffer.readu32, newcclosure(function(b, off)
+        local v = buffer.readu32(b, off)
         captureStreamByte(band(v, 0xFF))
         captureStreamByte(band(rshift(v, 8), 0xFF))
         captureStreamByte(band(rshift(v, 16), 0xFF))
         captureStreamByte(band(rshift(v, 24), 0xFF))
         return v
-    end)
+    end))
 
-    -- i32 reads
-    buffer.readi32 = _newcc(function(b, off)
-        local v = _buf_readi32(b, off)
+    hookfunction(buffer.readi32, newcclosure(function(b, off)
+        local v = buffer.readi32(b, off)
         local u = v < 0 and v + 4294967296 or v
         captureStreamByte(band(u, 0xFF))
         captureStreamByte(band(rshift(u, 8), 0xFF))
         captureStreamByte(band(rshift(u, 16), 0xFF))
         captureStreamByte(band(rshift(u, 24), 0xFF))
         return v
-    end)
+    end))
 
-    -- f32 reads
-    buffer.readf32 = _newcc(function(b, off)
-        local v = _buf_readf32(b, off)
-        local u = _buf_readu32(b, off)
+    hookfunction(buffer.readf32, newcclosure(function(b, off)
+        local v = buffer.readf32(b, off)
+        local u = buffer.readu32(b, off)
         captureStreamByte(band(u, 0xFF))
         captureStreamByte(band(rshift(u, 8), 0xFF))
         captureStreamByte(band(rshift(u, 16), 0xFF))
         captureStreamByte(band(rshift(u, 24), 0xFF))
         return v
-    end)
+    end))
 
-    -- readstring: log each char
-    buffer.readstring = _newcc(function(b, off, len)
-        local s = _buf_readstring(b, off, len)
-        -- Log as printable
+    hookfunction(buffer.readstring, newcclosure(function(b, off, len)
+        local s = buffer.readstring(b, off, len)
         local printable = s:gsub("[%c\128-\255]", ".")
         wlog("decoded_strings.txt", ("[off=%d len=%d] %s"):format(off, len, printable))
         for i = 1, #s do
             captureStreamByte(s:byte(i))
         end
         return s
-    end)
+    end))
 
-    -- Capture the raw pre-LCG buffer when it is written
-    -- (buffer.writeu32 is called by the ascii85 decoder to build the Luraph buffer)
-    local preBuffer = {}
-    local preCount  = 0
-    buffer.writeu32 = _newcc(function(b, off, v)
-        _buf_writeu32(b, off, v)
-        preBuffer[math.floor(off / 4) + 1] = v
-        preCount = preCount + 1
-    end)
+    hookfunction(buffer.writeu32, newcclosure(function(b, off, v)
+        return buffer.writeu32(b, off, v)
+    end))
 end
 
 -- ── Hook string.sub (outer IronBrew2 VM constant decoding) ───────────────────
-local _strsub  = string.sub
-local strSeen  = {}
-string.sub = _newcc(function(s, i, j)
-    local r = _strsub(s, i, j)
+local strSeen = {}
+hookfunction(string.sub, newcclosure(function(s, i, j)
+    local r = string.sub(s, i, j)
     if #r >= 3 and not strSeen[r] then
         local printable = r:gsub("[%c\128-\255]", ""):len()
         if #r > 0 and printable / #r > 0.5 then
@@ -192,23 +165,21 @@ string.sub = _newcc(function(s, i, j)
         end
     end
     return r
-end)
+end))
 
 -- ── Hook setfenv ─────────────────────────────────────────────────────────────
-local _setfenv = setfenv
-setfenv = _newcc(function(fn, env)
+hookfunction(setfenv, newcclosure(function(fn, env)
     if type(env) == "table" then
         wlog("decoded_env.txt", "=== setfenv ===")
         for k, v in pairs(env) do
             wlog("decoded_env.txt", ("  %s = %s"):format(tostring(k), tostring(v)))
         end
     end
-    return _setfenv(fn, env)
-end)
+    return setfenv(fn, env)
+end))
 
 -- ── Hook coroutine.wrap ──────────────────────────────────────────────────────
-local _cowrap = coroutine.wrap
-coroutine.wrap = _newcc(function(fn)
+hookfunction(coroutine.wrap, newcclosure(function(fn)
     if debug and debug.getupvalue then
         wlog("decoded_env.txt", "=== coroutine.wrap upvalues ===")
         local i = 1
@@ -219,26 +190,24 @@ coroutine.wrap = _newcc(function(fn)
             i = i + 1
         end
     end
-    return _cowrap(fn)
-end)
+    return coroutine.wrap(fn)
+end))
 
 -- ── Hook print / warn ────────────────────────────────────────────────────────
-local _print = print
-print = _newcc(function(...)
+hookfunction(print, newcclosure(function(...)
     local parts = {}
     for i = 1, select("#", ...) do parts[i] = tostring(select(i, ...)) end
     wlog("decoded_calls.txt", "[print] " .. table.concat(parts, "\t"))
-    _print(...)
-end)
+    return print(...)
+end))
 
 if warn then
-    local _warn = warn
-    warn = _newcc(function(...)
+    hookfunction(warn, newcclosure(function(...)
         local parts = {}
         for i = 1, select("#", ...) do parts[i] = tostring(select(i, ...)) end
         wlog("decoded_calls.txt", "[warn] " .. table.concat(parts, "\t"))
-        _warn(...)
-    end)
+        return warn(...)
+    end))
 end
 
 -- ── Hook game:HttpGet and HttpService ────────────────────────────────────────
